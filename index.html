@@ -43,6 +43,9 @@
     flex:1;                 /* NEW */
     display:flex;           /* NEW */
     flex-direction:column;  /* NEW */
+    /* Gestes tactiles : on gère nous-mêmes le scroll/gestes dans le viewer */
+.viewer { touch-action: none; }
+
   }
   .layout{
     flex:1; /* NEW */
@@ -389,6 +392,79 @@ window.addEventListener('keydown', (e) => {
   if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
   if (e.key.toLowerCase() === 'f') { e.preventDefault(); toggleFullscreen(); }
 });
+// ===== Gestes tactiles (swipe) =====
+const surface = document.querySelector('.viewer'); // ou '.stage' si tu veux limiter aux images
+let touchStartX = 0, touchStartY = 0, touchStartT = 0;
+
+const SWIPE_DIST = 50;   // distance minimale en px
+const SWIPE_TIME = 700;  // durée max en ms
+const ANGLE_TOL = 20;    // tolérance d'angle en degrés (pour bien séparer H/V)
+
+// Helpers
+function deg(absDy, absDx){ return Math.atan2(absDy, absDx) * 180 / Math.PI; }
+function isUI(el){ return Boolean(el.closest('input,select,button')); }
+
+// Changer d'exercice
+function nextExercise(){
+  stop();
+  currentExercise = (currentExercise + 1) % MANIFEST.length;
+  selectEl.value = currentExercise;
+  loadExercise();
+}
+function prevExercise(){
+  stop();
+  currentExercise = (currentExercise - 1 + MANIFEST.length) % MANIFEST.length;
+  selectEl.value = currentExercise;
+  loadExercise();
+}
+
+surface.addEventListener('touchstart', (e) => {
+  if (isUI(e.target)) return;          // ne pas capter sur les contrôles
+  if (e.touches.length !== 1) return;  // un seul doigt
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+  touchStartT = Date.now();
+}, { passive: true });
+
+surface.addEventListener('touchend', (e) => {
+  if (!touchStartT) return;
+  const t = Date.now() - touchStartT;
+  touchStartT = 0;
+  if (t > SWIPE_TIME) return;
+
+  const touch = e.changedTouches && e.changedTouches[0];
+  if (!touch) return;
+
+  const dx = touch.clientX - touchStartX;
+  const dy = touch.clientY - touchStartY;
+  const adx = Math.abs(dx), ady = Math.abs(dy);
+  if (adx < SWIPE_DIST && ady < SWIPE_DIST) return;
+
+  // Séparation horizontal vs vertical par l'angle
+  const a = deg(ady, adx); // angle vs horizontal
+  if (a <= ANGLE_TOL) {
+    // swipe horizontal : exercice
+    e.preventDefault();
+    if (dx < 0) nextExercise();   // ← swipe gauche = exercice suivant
+    else prevExercise();          // → swipe droite = exercice précédent
+    return;
+  }
+  if (a >= 90 - ANGLE_TOL) {
+    // swipe vertical : scénario
+    e.preventDefault();
+    stop();
+    if (dy < 0) next();  // ↑ suivant
+    else prev();         // ↓ précédent
+  }
+}, { passive: false });
+
+// (Optionnel) : retour visuel léger dans la barre de statut
+document.addEventListener('fullscreenchange', () => {
+  const state = document.fullscreenElement != null;
+  statusEl.textContent = state ? 'Plein écran activé' : 'Plein écran désactivé';
+  setTimeout(() => { statusEl.textContent = `Étape ${idx+1} / ${layers.length}`; }, 900);
+});
+
   </script>
 </body>
 </html>
