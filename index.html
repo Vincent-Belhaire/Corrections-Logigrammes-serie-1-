@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Corrections — Logigrammes (remplacement)</title>
+  <style>
+    /* Base */
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;
+      background:#f9fafb;
+      color:#1a1a1a;
+      display:flex; min-height:100dvh; align-items:center; justify-content:center;
+    }
+    .app{ width:min(1100px,92vw); }
+
+    /* Barre d’outils */
+    .toolbar{
+      display:flex; flex-wrap:wrap; gap:.5rem; align-items:center;
+      background:#fff; border:1px solid #ccc; border-radius:12px; padding:.6rem .8rem;
+      box-shadow:0 4px 12px rgba(0,0,0,.08);
+    }
+    .title{ font-weight:800; margin-right:auto; letter-spacing:.3px; }
+    select, .btn{
+      appearance:none; border:1px solid #ccc; background:#f1f5f9; color:#222;
+      padding:.4rem .8rem; border-radius:8px; cursor:pointer; font-weight:600; transition:all .15s ease;
+    }
+    .btn:hover, select:hover{ background:#e5e9ef; }
+    .range{ accent-color:#3b82f6; }
+
+    /* Viewer + layout */
+    .viewer{
+      position:relative; margin-top:12px; background:#fff; border:1px solid #ccc; border-radius:12px;
+      padding:12px; box-shadow:0 8px 20px rgba(0,0,0,.08);
+    }
+    .layout{ display:grid; grid-template-columns:1.3fr .9fr; gap:12px; }
+    @media (max-width:900px){ .layout{ grid-template-columns:1fr; } }
+
+    /* Scène */
+    .stage{
+      position:relative; width:100%; aspect-ratio:16/9; background:#f3f4f6; border-radius:8px; overflow:hidden;
+      display:grid; place-items:center;
+    }
+    .layer{
+      position:absolute; inset:0; object-fit:contain; width:100%; height:100%;
+      opacity:0; transition:opacity 320ms ease; pointer-events:none;
+    }
+    .layer.visible{ opacity:1; }
+
+    /* Légende + pastilles */
+    .legend{ display:flex; justify-content:space-between; align-items:center; gap:.8rem; margin-top:.6rem; font-size:.92rem; color:#444; }
+    .dots{ display:flex; gap:.35rem; align-items:center; flex-wrap:wrap; }
+    .dot{ width:.7rem; height:.7rem; border-radius:999px; background:#d1d5db; border:1px solid #9ca3af; }
+    .dot.active{ background:#3b82f6; border-color:#2563eb; }
+
+    /* Bloc explications */
+    .explanation{
+      background:#f0f9ff; border-left:4px solid #3b82f6; border-radius:6px; padding:12px; line-height:1.5;
+    }
+    .muted{ color:#555; }
+
+    /* Signature sous l’astuce */
+    .signature{
+  position:fixed;        /* <-- fixe à l'écran */
+  left:50%;
+  bottom:8px;
+  transform:translateX(-50%);
+  z-index:1000;
+  text-align:center;
+  padding:6px 10px;
+  font-size:.9rem;
+  color:#1e3a8a;
+  font-weight:600;
+  background:#f0f9ff;
+  border-radius:10px;
+  box-shadow:0 2px 10px rgba(0,0,0,.12);
+}
+
+/* pour éviter que la signature masque le bas du viewer en mode normal */
+.app { padding-bottom: 56px; }
+/* Quand .app passe en fullscreen, elle occupe TOUT l'écran */
+.app:fullscreen,
+.app:-webkit-full-screen{
+  width:100vw;
+  height:100dvh;
+  max-width:none;
+}
+
+/* Et on pousse la grille/scène à utiliser la hauteur totale */
+.app:fullscreen .viewer,
+.app:-webkit-full-screen .viewer{
+  flex:1;
+}
+.app:fullscreen .layout,
+.app:-webkit-full-screen .layout{
+  height:100%;
+}
+.app:fullscreen .stage,
+.app:-webkit-full-screen .stage{
+  /* rien de spécial, aspect-ratio garde le bon cadrage */
+}
+
+/* L'app devient une colonne qui peut grandir */
+.app{
+  width:min(1100px,92vw);
+  display:flex;             /* NEW */
+  flex-direction:column;    /* NEW */
+}
+
+/* Le viewer prend le reste de la hauteur dispo */
+.viewer{
+  flex:1;                   /* NEW */
+  display:flex;             /* NEW */
+  flex-direction:column;    /* NEW */
+}
+
+/* La grille prend toute la hauteur du viewer */
+.layout{
+  flex:1;                   /* NEW */
+  display:grid;
+  grid-template-columns:1.3fr .9fr;
+  gap:12px;
+}
+
+/* Colonne gauche = colonne flexible : la scène peut grandir */
+.layout > div:first-child{
+  display:flex;             /* NEW */
+  flex-direction:column;    /* NEW */
+  min-height:0;             /* NEW: évite les débordements */
+}
+
+/* La scène remplit la colonne gauche, avec aspect-ratio conservé */
+.stage{
+  flex:1;                   /* NEW */
+  aspect-ratio:16/9;
+}
+
+
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="toolbar">
+      <div class="title">Corrections — Logigrammes</div>
+      <label for="exercise" class="muted">Exercice</label>
+      <select id="exercise"></select>
+      <button id="play"  class="btn" aria-pressed="false" title="Lecture/Pause (Espace)">Lecture</button>
+      <button id="prev"  class="btn" title="Précédent (←)">⟵</button>
+      <button id="next"  class="btn" title="Suivant (→)">⟶</button>
+      <button id="reset" class="btn" title="Réinitialiser (R)">Réinit</button>
+      <button id="fullscreen" class="btn" title="Plein écran (F)" aria-pressed="false">⛶ Plein écran</button>
+
+      <label for="speed" class="muted">Vitesse</label>
+      <input id="speed" class="range" type="range" min="400" max="4000" step="100" value="1200" />
+    </div>
+
+    <div class="viewer">
+      <div class="layout">
+        <!-- Colonne gauche : images + pastilles -->
+        <div>
+          <div class="stage" id="stage"></div>
+          <div class="legend">
+            <div id="status"></div>
+            <div class="dots" id="dots"></div>
+          </div>
+        </div>
+
+        <!-- Colonne droite : explications + signature -->
+        <div>
+          <div class="explanation">
+            <div id="exTitle" style="font-weight:700;margin-bottom:.3rem;"></div>
+            <div id="stepTitle" style="font-weight:600;margin-bottom:.2rem;"></div>
+            <div id="expl"></div>
+            <div class="muted" style="margin-top:.6rem;font-size:.9rem;">
+              Astuce : <b>Espace</b> lecture/pause • <b>←</b>/<b>→</b> étape précédente/suivante • <b>R</b> réinit.
+            </div>
+          </div>
+
+          <div class="signature">
+            Technologie – Les algorithmes - Vincent Belhaire<br>
+           
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  const MANIFEST = [
+    {
+      "title": "1 - Alarme de moto",
+      "steps": [
+        { "src": "1-Alarme de moto/Alarme de moto 1.svg", "label": "Scénario 1",
+          "explanation": "👉 L’alarme n’est pas activée, elle attend en boucle d’être enclenchée." },
+        { "src": "1-Alarme de moto/Alarme de moto 2.svg", "label": "Scénario 2",
+          "explanation": "👉 L’alarme est activée, elle vérifie en continu si la moto est déplacée. Ici, ce n’est pas le cas." },
+        { "src": "1-Alarme de moto/Alarme de moto 3.svg", "label": "Scénario 3",
+          "explanation": "👉 L’alarme est activée, elle détecte que la moto est déplacée : l’alarme se déclenche." }
+      ]
+    },
+    {
+      "title": "2 - Portique de métro",
+      "steps": [
+        { "src": "2-Portique de métro/0 - Poussoir - Led on_off(11).svg", "label": "Scénario 1",
+          "explanation": "👉 Il n’y a pas de ticket introduit dans la borne de métro. La borne attend en boucle qu’un ticket soit inséré." },
+        { "src": "2-Portique de métro/0 - Poussoir - Led on_off(12).svg", "label": "Scénario 2",
+          "explanation": "👉 La borne détecte un ticket et le vérifie. Comme il n’est pas valide, il est rejeté. La borne attend alors un nouveau ticket." },
+        { "src": "2-Portique de métro/0 - Poussoir - Led on_off(13).svg", "label": "Scénario 3",
+          "explanation": "👉 La borne détecte un ticket et le vérifie. Comme il est valide, il est accepté. Le portique s’ouvre et la borne attend le passage de l’usager." },
+        { "src": "2-Portique de métro/0 - Poussoir - Led on_off(14).svg", "label": "Scénario 4",
+          "explanation": "👉 La borne détecte un ticket et le vérifie. Comme il est valide, il est accepté. Elle ouvre le portique, détecte le passage de l’usager puis referme le portique. La borne revient ensuite à son état initial et attend un nouveau ticket." }
+      ]
+    },
+    {
+      "title": "3 - Radar de vitesse",
+      "steps": [
+        { "src": "3-Radar de vitesse/Radar de vitesse 1.svg", "label": "Scénario 1",
+          "explanation": "👉 La vitesse mesurée est ≤ 80 km/h. Le radar poursuit ses contrôles en boucle." },
+        { "src": "3-Radar de vitesse/Radar de vitesse 2.svg", "label": "Scénario 2",
+          "explanation": "👉 La vitesse mesurée est > 80 km/h : le radar déclenche le flash, lit la plaque, prend la photo, envoie le dossier (plaque + photo), puis reprend la surveillance." }
+      ]
+    },
+    {
+      "title": "4 - Distribution de boisson 1€",
+      "steps": [
+        { "src": "4-Distribution de boisson 1€/Distributeur 1.svg", "label": "Scénario 1",
+          "explanation": "👉 Le distributeur attend qu’un client sélectionne une boisson, en boucle." },
+        { "src": "4-Distribution de boisson 1€/Distributeur 2.svg", "label": "Scénario 2",
+          "explanation": "👉 Un client sélectionne une boisson. Le distributeur affiche son prix et vérifie la pièce insérée : c’est bien une pièce d’un euro. La boisson est distribuée, puis la machine revient à son état initial." },
+        { "src": "4-Distribution de boisson 1€/Distributeur 3.svg", "label": "Scénario 3",
+          "explanation": "👉 Un client sélectionne une boisson. Le distributeur affiche son prix et vérifie la pièce insérée : ce n’est pas une pièce d’un euro. La pièce est rejetée, puis la machine revient à son état initial." }
+      ]
+    },
+    {
+      "title": "5 - Distribution de boisson 2€",
+      "steps": [
+        { "src": "5-Distribution de boisson 2€/Distributeur 21.svg", "label": "Scénario 1",
+          "explanation": "👉 Le distributeur attend qu’un client sélectionne une boisson, en boucle." },
+        { "src": "5-Distribution de boisson 2€/Distributeur 22.svg", "label": "Scénario 2 (pièce invalide)",
+          "explanation": "👉 Un client sélectionne une boisson. Le distributeur affiche son prix et vérifie la pièce insérée : ni 1 € ni 2 €. La pièce est rejetée, puis la machine revient à son état initial." },
+        { "src": "5-Distribution de boisson 2€/Distributeur 23.svg", "label": "Scénario 3 (pièce de 2 €)",
+          "explanation": "👉 Un client sélectionne une boisson. Le distributeur affiche son prix et vérifie la pièce insérée : c’est une pièce de 2 €. Paiement validé ; la boisson est distribuée, le crédit est remis à 0 et la machine revient à l’attente." },
+        { "src": "5-Distribution de boisson 2€/Distributeur 24.svg", "label": "Scénario 4 (pièce de 1 € – crédit partiel)",
+          "explanation": "👉 Un client sélectionne une boisson. Le distributeur affiche son prix et vérifie la pièce insérée : c’est une pièce de 1 €. Crédit = 1 € ; la machine attend une seconde pièce pour atteindre 2 €." }
+      ]
+    }
+  ];
+
+  const stage = document.getElementById('stage');
+  const dotsEl = document.getElementById('dots');
+  const statusEl = document.getElementById('status');
+  const playBtn = document.getElementById('play');
+  const prevBtn = document.getElementById('prev');
+  const nextBtn = document.getElementById('next');
+  const resetBtn = document.getElementById('reset');
+  const speedInput = document.getElementById('speed');
+  const selectEl = document.getElementById('exercise');
+  const fsBtn = document.getElementById('fullscreen');
+const fsTarget = document.querySelector('.app'); // on met en plein écran TOUTE l'app pour garder la signature visible
+
+
+
+  const exTitleEl = document.getElementById('exTitle');
+  const stepTitleEl = document.getElementById('stepTitle');
+  const explEl = document.getElementById('expl');
+
+  let currentExercise = 0;
+  let idx = 0;
+  let playing = false;
+  let timer = null;
+  let stepDuration = parseInt(speedInput.value, 10);
+  let layers = [];
+
+  function initSelect(){
+    selectEl.innerHTML = '';
+    MANIFEST.forEach((ex, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = ex.title;
+      selectEl.appendChild(opt);
+    });
+    selectEl.addEventListener('change', () => {
+      stop();
+      currentExercise = parseInt(selectEl.value, 10);
+      loadExercise();
+    });
+  }
+
+  function buildStage(ex){
+    stage.innerHTML = '';
+    layers = ex.steps.map(step => {
+      const img = document.createElement('img');
+      img.className = 'layer';
+      img.alt = step.label;
+      img.src = step.src;
+      img.addEventListener('error', () => {
+        statusEl.textContent = '⚠️ Fichier introuvable : ' + (img.getAttribute('src') || '');
+        img.style.outline = '2px dashed #e11d48';
+      }, { once: true });
+      stage.appendChild(img);
+      return img;
+    });
+  }
+
+  function buildDots(len){
+    dotsEl.innerHTML = '';
+    for(let i=0;i<len;i++){ const d=document.createElement('div'); d.className='dot'; dotsEl.appendChild(d); }
+  }
+  function updateDots(iActive){
+    Array.from(dotsEl.children).forEach((d,i)=>d.classList.toggle('active', i===iActive));
+  }
+  function applyVisibility(){
+    layers.forEach((el,i)=> el.classList.toggle('visible', i===idx));
+  }
+  function setIndex(newIdx){
+    idx = Math.max(0, Math.min(layers.length-1, newIdx));
+    applyVisibility();
+    const ex = MANIFEST[currentExercise];
+    const step = ex.steps[idx];
+    statusEl.textContent = `Étape ${idx+1} / ${layers.length}`;
+    exTitleEl.textContent = ex.title;
+    stepTitleEl.textContent = step.label;
+    explEl.textContent = step.explanation;
+    updateDots(idx);
+  }
+
+  function next(){ if(idx < layers.length-1){ setIndex(idx+1); } else { setIndex(0); } }
+  function prev(){ if(idx > 0){ setIndex(idx-1); } }
+  function resetAll(){ stop(); setIndex(0); }
+
+  function tick(){
+    if(!playing) return;
+    next();
+    timer = setTimeout(tick, stepDuration);
+  }
+  function play(){
+    if(playing) return;
+    playing = true;
+    playBtn.setAttribute('aria-pressed','true');
+    playBtn.textContent = 'Pause';
+    timer = setTimeout(tick, stepDuration);
+  }
+  function stop(){
+    playing = false;
+    playBtn.setAttribute('aria-pressed','false');
+    playBtn.textContent = 'Lecture';
+    if(timer){ clearTimeout(timer); timer=null; }
+  }
+  function togglePlay(){ playing ? stop() : play(); }
+
+  speedInput.addEventListener('input', e => {
+    stepDuration = parseInt(e.target.value, 10);
+    if(playing){ stop(); play(); }
+  });
+  playBtn.addEventListener('click', togglePlay);
+  prevBtn.addEventListener('click', ()=>{ stop(); prev(); });
+  nextBtn.addEventListener('click', ()=>{ stop(); next(); });
+  resetBtn.addEventListener('click', resetAll);
+
+  window.addEventListener('keydown', (e) => {
+    if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+    if(e.code === 'Space'){ e.preventDefault(); togglePlay(); }
+    if(e.key === 'ArrowRight'){ e.preventDefault(); stop(); next(); }
+    if(e.key === 'ArrowLeft'){ e.preventDefault(); stop(); prev(); }
+    if(e.key.toLowerCase() === 'r'){ e.preventDefault(); resetAll(); }
+  });
+
+  function loadExercise(){
+    const ex = MANIFEST[currentExercise];
+    buildStage(ex);
+    buildDots(ex.steps.length);
+    setIndex(0);
+  }
+
+  initSelect();
+  loadExercise();
+  function isFullscreen() {
+  return document.fullscreenElement != null;
+}
+
+async function enterFullscreen() {
+  const el = fsTarget;
+  if (el.requestFullscreen) await el.requestFullscreen();
+  else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen(); // Safari
+}
+
+async function exitFullscreen() {
+  if (document.exitFullscreen) await document.exitFullscreen();
+  else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); // Safari
+}
+
+async function toggleFullscreen() {
+  if (isFullscreen()) await exitFullscreen();
+  else await enterFullscreen();
+}
+
+document.addEventListener('fullscreenchange', () => {
+  const state = isFullscreen();
+  fsBtn.setAttribute('aria-pressed', state ? 'true' : 'false');
+  fsBtn.textContent = state ? 'Quitter plein écran' : '⛶ Plein écran';
+});
+
+// clic bouton
+fsBtn.addEventListener('click', toggleFullscreen);
+
+// raccourci clavier F (Esc sort du plein écran automatiquement)
+window.addEventListener('keydown', (e) => {
+  if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+  if (e.key.toLowerCase() === 'f') { e.preventDefault(); toggleFullscreen(); }
+});
+  </script>
+</body>
+</html>
